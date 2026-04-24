@@ -76,13 +76,21 @@ defmodule Tempo.Sql.MixProject do
 
   defp deps do
     [
-      {:ex_tempo, path: "../tempo"},
+      {:ex_tempo, "~> 0.3"},
       {:ecto, "~> 3.13"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.19"},
       {:ex_doc, "~> 0.30", runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
-    ]
+    ] ++ maybe_json_polyfill()
+  end
+
+  defp maybe_json_polyfill do
+    if Code.ensure_loaded?(:json) do
+      []
+    else
+      [{:json_polyfill, "~> 0.2 or ~> 1.0"}]
+    end
   end
 
   defp elixirc_paths(:test), do: ["lib", "mix", "test/support"]
