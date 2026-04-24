@@ -64,6 +64,56 @@ defmodule Tempo.SQL.Conversion do
   end
 
   @doc """
+  Convert a `t:Tempo.Interval.t/0` into a `%Postgrex.Range{}`
+  tolerant enough for the composite `tempo_range` type.
+
+  Unlike `interval_to_range/1`, this variant accepts Tempo
+  endpoints the plain `tstzrange` encoder rejects — qualifications,
+  non-Gregorian calendars, multi-valued slots, ordinal/week dates
+  — because the composite's `meta` column carries the original
+  shape losslessly. The range is still populated from the
+  materialised endpoints so Postgres range-operator queries work.
+
+  Endpoints are materialised via `Tempo.to_interval/1` where
+  needed to produce usable DateTime bounds.
+  """
+  @spec interval_to_queryable_range(Tempo.Interval.t()) ::
+          {:ok, Postgrex.Range.t()} | {:error, UnsupportedValueError.t()}
+  def interval_to_queryable_range(%Tempo.Interval{} = interval) do
+    with {:ok, lower} <- queryable_endpoint(interval.from),
+         {:ok, upper} <- queryable_endpoint(interval.to) do
+      {:ok,
+       %Postgrex.Range{
+         lower: lower,
+         upper: upper,
+         lower_inclusive: true,
+         upper_inclusive: false
+       }}
+    end
+  end
+
+  defp queryable_endpoint(:undefined), do: {:ok, :unbound}
+  defp queryable_endpoint(nil), do: {:ok, :unbound}
+
+  defp queryable_endpoint(%Tempo{} = tempo) do
+    case Tempo.to_interval(tempo) do
+      {:ok, %Tempo.Interval{from: %Tempo{} = materialised}} ->
+        tempo_to_datetime(materialised)
+
+      _ ->
+        tempo_to_datetime(tempo)
+    end
+  end
+
+  defp queryable_endpoint(%Tempo.Duration{}) do
+    {:error,
+     UnsupportedValueError.exception(
+       reason: :unsupported_endpoint,
+       message: "cannot derive a queryable range bound from a Tempo.Duration alone"
+     )}
+  end
+
+  @doc """
   Convert a `%Postgrex.Range{}` back into a `t:Tempo.Interval.t/0`.
 
   Unlike discrete range types (`int4range`, `daterange`), PostgreSQL

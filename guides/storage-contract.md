@@ -2,9 +2,24 @@
 
 How Tempo types map to PostgreSQL range types, what survives a store-and-load cycle, and — importantly — what does not.
 
-This is a reference document. Every claim here is enforced by [`Tempo.SQL.Conversion`](https://github.com/kipcole9/tempo_sql/blob/main/lib/tempo/sql/conversion.ex) and covered by the test suite.
+This is a reference document. Every claim here is enforced by [`Tempo.SQL.Conversion`](https://github.com/kipcole9/tempo_sql/blob/main/lib/tempo/sql/conversion.ex) / [`Tempo.SQL.Meta`](https://github.com/kipcole9/tempo_sql/blob/main/lib/tempo/sql/meta.ex) and covered by the test suite.
 
-## The mapping
+## Two storage modes
+
+`tempo_sql` offers two parallel storage strategies. Pick one per column:
+
+| Strategy             | Ecto types                                  | PG types                          | Round-trip fidelity |
+|----------------------|---------------------------------------------|-----------------------------------|---------------------|
+| **Plain range**      | `Tempo.Ecto.Interval` / `.IntervalSet` / `.Tempo` | `tstzrange` / `tstzmultirange`    | Lossy (span only)   |
+| **Composite**        | `Tempo.Ecto.TempoRange` / `.TempoMultirange`      | `tempo_range` / `tempo_multirange` | Full (byte-exact)   |
+
+**Pick plain range when** the downstream workflow only cares about the span — start, end, overlap relationships. Queries are native Postgres operators. Minimal schema overhead.
+
+**Pick composite when** you need round-trip fidelity — qualifications, non-Gregorian calendars, recurrence rules, zone identifiers, or the implicit-vs-explicit-span distinction. The composite stores a queryable `tstzrange` *and* a `jsonb` meta column that captures everything else the Tempo struct knows. Costs: a `CREATE TYPE` migration, a different column type, composite-aware query macros, and one extra column's worth of storage per row.
+
+Most of the rest of this guide is about the plain-range mode, because the composite mode is lossless by design — the one-paragraph summary is "whatever you put in comes back exactly, and range queries still work via `(column).range`". Composites have their own section at the end.
+
+## The plain-range mapping
 
 | Tempo type              | Ecto type                     | PostgreSQL column   |
 |-------------------------|-------------------------------|---------------------|
@@ -193,6 +208,115 @@ Tempo intervals are half-open `[from, to)` — inclusive first, exclusive last. 
 Tempo is second-resolution, so the one-second shift is exact — the loaded interval covers the same instants as the stored range. This means `tempo_sql` columns are safe to share with writers that use any bracket convention.
 
 On the dump side, `tempo_sql` always emits `[lower_inclusive: true, upper_inclusive: false]`, matching Tempo's convention.
+
+## Composite mode — `tempo_range` and `tempo_multirange`
+
+The composite types preserve the full Tempo shape. Use them when the plain-range mode's losses would hurt — recurrence rules, qualifications (`:uncertain`, `:approximate`), non-Gregorian calendars, implicit-span shape, per-interval metadata.
+
+### Setup
+
+One-time migration for the Postgres composite types:
+
+```elixir
+defmodule MyApp.Repo.Migrations.CreateTempoTypes do
+  use Ecto.Migration
+  import Tempo.SQL.Migration
+
+  def up,   do: create_tempo_types()
+  def down, do: drop_tempo_types()
+end
+```
+
+This creates:
+
+```sql
+CREATE TYPE tempo_range AS (
+  range      tstzrange,
+  resolution text,
+  meta       jsonb
+);
+
+CREATE TYPE tempo_multirange AS (
+  ranges     tstzmultirange,
+  resolution text,
+  meta       jsonb
+);
+```
+
+The three fields: `range`/`ranges` holds the queryable span; `resolution` records the declared truncation (for documentation); `meta` is a JSON document with every Tempo-shape fact the range column cannot express.
+
+The application's Postgrex needs to know how to encode the `jsonb` column. `tempo_sql` ships a `Tempo.SQL.PostgresTypes` module that configures `:json` (OTP 27+):
+
+```elixir
+config :my_app, MyApp.Repo, types: Tempo.SQL.PostgresTypes
+```
+
+Alternatively, define your own types module via `Postgrex.Types.define(MyApp.PostgresTypes, [], json: Tempo.SQL.JSON)`.
+
+### Schema
+
+```elixir
+schema "meetings" do
+  field :window, Tempo.Ecto.TempoRange
+end
+
+schema "calendars" do
+  field :busy_times, Tempo.Ecto.TempoMultirange
+end
+```
+
+The Ecto API is identical — cast/dump/load take and return `%Tempo.Interval{}` / `%Tempo.IntervalSet{}` values, just like the plain-range types.
+
+### What round-trips
+
+A composite column preserves:
+
+* **Token-list resolution.** A stored `~o"2026Y"` loads as `~o"2026Y"`, not a materialised second-resolution interval. This is the headline difference from the plain-range mode.
+
+* **Qualifications.** `:uncertain`, `:approximate`, and IXDTF qualification strings survive.
+
+* **Recurrence rules.** `Interval.recurrence`, `direction`, `duration`, and `repeat_rule` all round-trip via their ISO 8601 representations in the meta column. A stored `R5/2022-01-01/P1M` loads back as the same recurring interval.
+
+* **Non-Gregorian calendars.** Whatever calendar the stored Tempo uses round-trips through the ISO 8601 / IXDTF encoding in `meta`.
+
+* **Zone identifiers.** IANA names (`"America/New_York"`) survive, not just UTC offsets.
+
+* **`Interval.metadata`** and **`IntervalSet.metadata`**, provided the user map is JSON-serialisable (strings, numbers, booleans, nested maps/lists).
+
+### Queries
+
+The standard Postgres range operators (`@>`, `&&`, `-|-`) don't apply directly to composite columns — they must reach into the `range` field. Use the parallel query API:
+
+```elixir
+import Tempo.Ecto.QueryAPI.Composite
+
+from m in FidelityMeeting,
+  where: overlaps(m.window, ^search_range)
+```
+
+The macros expand to `fragment("(?).range && ?", m.window, search_range)` — same operator names and Allen-algebra semantics as `Tempo.Ecto.QueryAPI`, just auto-unwrapping.
+
+Mixing `Tempo.Ecto.QueryAPI` (plain-range macros) with a composite column produces a SQL error. Mixing `Tempo.Ecto.QueryAPI.Composite` with a plain `tstzrange` column also fails. Choose one import per query module; a query module that mixes columns should qualify both imports.
+
+### What the composite still cannot do
+
+* **Fully-unbounded intervals** (`from: :undefined, to: :undefined`) are still rejected. The range field needs a bound on at least one side for any Postgres range-operator query to be meaningful. Use a NULL column if you need "no interval".
+
+* **Empty `IntervalSet`** is still rejected. Use NULL.
+
+* **User `metadata` that contains non-JSON-serialisable terms** (atoms other than `nil`, structs, tuples, pids) will raise on dump. If the map contains atoms you care about, convert them to strings at the application layer before storing.
+
+### Trade-offs
+
+Composite types are not a free upgrade:
+
+* **Storage.** Every row carries a `jsonb` blob in addition to the range column. For homogeneous-shape data where you don't need fidelity, the plain-range mode is cheaper.
+
+* **Indexes.** GiST indexes apply to the range field, not the whole composite. Index the sub-field explicitly: `CREATE INDEX ON meetings USING gist (((window).range))`. The test suite skips this for simplicity; production workloads should add it.
+
+* **Third-party tooling.** A plain `tstzrange` column is understood by every Postgres client, ORM, and BI tool. A `tempo_range` composite is not — downstream systems need to either know about the type or unwrap it via `(column).range` in a view.
+
+The guidance is: plain-range for the common case, composite when the schema has load-bearing Tempo shape that matters.
 
 ## Summary
 

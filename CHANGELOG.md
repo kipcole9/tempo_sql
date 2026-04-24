@@ -16,4 +16,6 @@ Tempo SQL persists Tempo intervals and interval sets as PostgreSQL range types, 
 
 **Query API.** `Tempo.Ecto.QueryAPI` wraps Postgres range operators (`@>`, `&&`, `-|-`, `<<`, `>>`) under Allen's interval-algebra names — `contains`, `overlaps`, `meets`, `strictly_before`, `strictly_after`.
 
-**Round-trip note.** Round 1 is lossy on metadata: `Tempo.Interval.metadata`, `Tempo.IntervalSet.metadata`, Tempo `:extended` metadata, and the implicit-vs-explicit-span distinction are all dropped on store. A future release will add a `:text` (ISO 8601) variant for callers who need perfect round-trip.
+**Round-trip note.** The plain-range types (`Tempo.Ecto.Interval`, `.IntervalSet`, `.Tempo`) are lossy on metadata — qualifications, recurrence rules, calendars, zone identifiers, and the implicit-vs-explicit-span distinction are dropped on store. Partial resolution is recoverable via the `:resolution` field option. For full round-trip fidelity, use the composite types below.
+
+**Composite `tempo_range` / `tempo_multirange` types.** `Tempo.Ecto.TempoRange` and `Tempo.Ecto.TempoMultirange` persist the full Tempo shape byte-for-byte via a PostgreSQL composite type pairing a `tstzrange` / `tstzmultirange` with a `jsonb` meta column. One-time migration creates the types (`Tempo.SQL.Migration.create_tempo_types/0`); field helpers (`add_tempo_range/2`, `add_tempo_multirange/2`) declare the columns; `Tempo.Ecto.QueryAPI.Composite` provides auto-unwrapping query macros. Uses Erlang's built-in `:json` (OTP 27+) via the `Tempo.SQL.PostgresTypes` module — no Jason dependency.

@@ -88,11 +88,22 @@ Repo.all(
 
 ## Ecto types
 
+**Plain range — span only, lossy round-trip:**
+
 | Type                       | Stores                          | Postgres column    |
 |----------------------------|---------------------------------|--------------------|
 | `Tempo.Ecto.Interval`      | `%Tempo.Interval{}`             | `tstzrange`        |
 | `Tempo.Ecto.IntervalSet`   | `%Tempo.IntervalSet{}`          | `tstzmultirange`   |
 | `Tempo.Ecto.Tempo`         | bare `%Tempo{}` (implicit span) | `tstzrange`        |
+
+**Composite — full Tempo shape, byte-exact round-trip:**
+
+| Type                          | Stores                 | Postgres column    |
+|-------------------------------|------------------------|--------------------|
+| `Tempo.Ecto.TempoRange`       | `%Tempo.Interval{}`    | `tempo_range`      |
+| `Tempo.Ecto.TempoMultirange`  | `%Tempo.IntervalSet{}` | `tempo_multirange` |
+
+Use the composite types when the plain-range mode's losses hurt — recurrence rules, qualifications (`:uncertain`, `:approximate`), non-Gregorian calendars, zone identifiers, or the implicit-vs-explicit-span distinction. See the [storage contract guide](https://github.com/kipcole9/tempo_sql/blob/main/guides/storage-contract.md#composite-mode--tempo_range-and-tempo_multirange) for setup and trade-offs.
 
 `Tempo.Ecto.Tempo` materialises a partial Tempo value (`~o"2026Y"`, `~o"2026Y-06M"`) to its explicit span before writing. On load you get back a `%Tempo.Interval{}` — the "it was just a year token" fact doesn't round-trip.
 

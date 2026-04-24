@@ -92,4 +92,125 @@ defmodule Tempo.SQL.Migration do
       Ecto.Migration.create(Ecto.Migration.index(table, [column], options))
     end
   end
+
+  @doc """
+  Create the composite types used by `Tempo.Ecto.TempoRange` and
+  `Tempo.Ecto.TempoMultirange`.
+
+  This should be run once, in an early migration, before any
+  schema declares a `tempo_range` or `tempo_multirange` column:
+
+      defmodule MyApp.Repo.Migrations.CreateTempoTypes do
+        use Ecto.Migration
+        import Tempo.SQL.Migration
+
+        def up,   do: create_tempo_types()
+        def down, do: drop_tempo_types()
+      end
+
+  Creates two PostgreSQL composite types:
+
+      CREATE TYPE tempo_range AS (
+        range      tstzrange,
+        resolution text,
+        meta       jsonb
+      );
+
+      CREATE TYPE tempo_multirange AS (
+        ranges     tstzmultirange,
+        resolution text,
+        meta       jsonb
+      );
+
+  These are the round-trip-preserving counterparts to the plain
+  `tstzrange` / `tstzmultirange` columns used by
+  `Tempo.Ecto.Interval` and `Tempo.Ecto.IntervalSet`.
+
+  """
+  def create_tempo_types do
+    Ecto.Migration.execute(
+      """
+      CREATE TYPE tempo_range AS (
+        range      tstzrange,
+        resolution text,
+        meta       jsonb
+      )
+      """,
+      "DROP TYPE IF EXISTS tempo_range"
+    )
+
+    Ecto.Migration.execute(
+      """
+      CREATE TYPE tempo_multirange AS (
+        ranges     tstzmultirange,
+        resolution text,
+        meta       jsonb
+      )
+      """,
+      "DROP TYPE IF EXISTS tempo_multirange"
+    )
+  end
+
+  @doc """
+  Drop the composite types created by `create_tempo_types/0`.
+
+  Intended for use in `down/0` callbacks. Fails if any column
+  still uses either type — drop the columns first.
+
+  """
+  def drop_tempo_types do
+    Ecto.Migration.execute(
+      "DROP TYPE IF EXISTS tempo_multirange",
+      """
+      CREATE TYPE tempo_multirange AS (
+        ranges     tstzmultirange,
+        resolution text,
+        meta       jsonb
+      )
+      """
+    )
+
+    Ecto.Migration.execute(
+      "DROP TYPE IF EXISTS tempo_range",
+      """
+      CREATE TYPE tempo_range AS (
+        range      tstzrange,
+        resolution text,
+        meta       jsonb
+      )
+      """
+    )
+  end
+
+  @doc """
+  Add a `tempo_range` column for a `Tempo.Ecto.TempoRange` field.
+
+  Requires `create_tempo_types/0` to have been run in an earlier
+  migration.
+
+  ### Examples
+
+      add_tempo_range :reporting_period
+      add_tempo_range :reporting_period, null: false
+
+  """
+  defmacro add_tempo_range(field, options \\ []) do
+    quote bind_quoted: [field: field, options: options] do
+      Ecto.Migration.add(field, :tempo_range, options)
+    end
+  end
+
+  @doc """
+  Add a `tempo_multirange` column for a
+  `Tempo.Ecto.TempoMultirange` field.
+
+  Requires `create_tempo_types/0` to have been run in an earlier
+  migration.
+
+  """
+  defmacro add_tempo_multirange(field, options \\ []) do
+    quote bind_quoted: [field: field, options: options] do
+      Ecto.Migration.add(field, :tempo_multirange, options)
+    end
+  end
 end
