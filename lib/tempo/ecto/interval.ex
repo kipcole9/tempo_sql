@@ -1,8 +1,8 @@
 if Code.ensure_loaded?(Ecto.Type) do
   defmodule Tempo.Ecto.Interval do
     @moduledoc """
-    Ecto.Type for persisting a `t:Tempo.Interval.t/0` as a
-    PostgreSQL `tstzrange` value.
+    Ecto.ParameterizedType for persisting a `t:Tempo.Interval.t/0`
+    as a PostgreSQL `tstzrange` value.
 
     ## Usage
 
@@ -16,100 +16,126 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     (or use `Tempo.SQL.Migration.add_interval/2`).
 
+    ## Options
+
+      * `:resolution` — on load, truncate both endpoints to the
+        given component and drop all sub-components. One of
+        `:year`, `:month`, `:day`, `:hour`, `:minute`, or
+        `:second`. Defaults to `:second` (no truncation). See
+        the storage contract guide for the semantics and
+        caveats.
+
+            field :reporting_period, Tempo.Ecto.Interval, resolution: :year
+
     ## Storage contract
 
-    This type refuses to store values it cannot round-trip cleanly.
-    `dump/1` returns `{:error, %Tempo.SQL.UnsupportedValueError{}}`
-    (via `:error` from Ecto's callback) for:
+    This type refuses to store values it cannot round-trip
+    semantically. `dump/3` returns `:error` for:
 
-      * Intervals with a recurrence count (`recurrence != 1`) or a
-        `repeat_rule`. Materialise these into a
+      * Intervals with a recurrence count (`recurrence != 1`) or
+        a `repeat_rule`. Materialise into a
         `t:Tempo.IntervalSet.t/0` via `Tempo.to_interval/1` and
         store the set as `Tempo.Ecto.IntervalSet` instead.
 
-      * Intervals whose `from` or `to` endpoints are
-        `t:Tempo.t/0` values without a full year-month-day-hour-
-        minute-second resolution. Materialise via
-        `Tempo.to_interval/1` first.
-
       * Tempo endpoints with a `:qualification` (`:uncertain`,
-        `:approximate`), a non-Gregorian calendar, or multi-valued
-        token slots (`day_of_week: [1, 3, 5]`, `day: 1..15`).
+        `:approximate`), a non-Gregorian calendar, or
+        multi-valued token slots (`day_of_week: [1, 3, 5]`,
+        `day: 1..15`).
 
       * Intervals that are unbounded on both sides. Partial open
-        ends (`from: :undefined` or `to: :undefined`) are stored as
-        `(,b]` / `[a,)` ranges in Postgres.
+        ends (`from: :undefined` or `to: :undefined`) are stored
+        as `(,b]` / `[a,)` ranges in Postgres.
 
-    ## Metadata and round-trip
+    ## Bracket normalisation on load
 
-    Round-trip is lossy by design in this first release:
-
-      * `:extended` metadata (zone_id, IXDTF tags) is dropped.
-      * `:qualification` cannot be stored (see above).
-      * Non-Gregorian calendars are rejected rather than converted.
-      * The `:metadata` field on `Tempo.Interval` is dropped.
-
-    Loaded values are always Gregorian-calendar Tempo values at
-    UTC (shift `[hour: 0]`, zone_id `"Etc/UTC"`).
+    PostgreSQL does not canonicalise `tstzrange` values on
+    output — a column populated by another writer might hold
+    `[a, b]`, `(a, b)`, or `(a, b]`. The loader normalises any
+    non-half-open range to Tempo's `[first, last)` convention
+    by shifting the offending endpoint one second (Tempo is
+    second-resolution so this is exact).
 
     """
 
-    @behaviour Ecto.Type
+    use Ecto.ParameterizedType
 
     alias Tempo.SQL.Conversion
 
-    @impl Ecto.Type
-    def type, do: :tstzrange
+    @doc """
+    Helper for use outside a schema — returns a `t:Ecto.ParameterizedType.opts/0`
+    tuple that can be passed to `Ecto.Type.cast/2` etc.
 
-    @impl Ecto.Type
-    def cast(nil), do: {:ok, nil}
-    def cast(%Tempo.Interval{} = interval), do: materialise(interval)
-    def cast(%Tempo{} = tempo), do: materialise(tempo)
+    ### Examples
 
-    def cast(%Postgrex.Range{} = range) do
-      case Conversion.range_to_interval(range) do
+        params = Tempo.Ecto.Interval.cast_type(resolution: :year)
+        Ecto.Type.cast(Tempo.Ecto.Interval, range, params)
+
+    """
+    def cast_type(options \\ []) do
+      Ecto.ParameterizedType.init(__MODULE__, options)
+    end
+
+    @impl Ecto.ParameterizedType
+    def type(_params), do: :tstzrange
+
+    @impl Ecto.ParameterizedType
+    def init(options) do
+      resolution =
+        options
+        |> Keyword.get(:resolution, :second)
+        |> Conversion.validate_resolution!()
+
+      %{resolution: resolution}
+    end
+
+    @impl Ecto.ParameterizedType
+    def cast(nil, _params), do: {:ok, nil}
+    def cast(%Tempo.Interval{} = interval, _params), do: materialise(interval)
+    def cast(%Tempo{} = tempo, _params), do: materialise(tempo)
+
+    def cast(%Postgrex.Range{} = range, params) do
+      case Conversion.range_to_interval(range, resolution: params.resolution) do
         {:ok, interval} -> {:ok, interval}
         {:error, _} -> :error
       end
     end
 
-    def cast(_), do: :error
+    def cast(_, _params), do: :error
 
-    @impl Ecto.Type
-    def load(nil), do: {:ok, nil}
+    @impl Ecto.ParameterizedType
+    def load(value, loader \\ nil, params \\ %{resolution: :second})
 
-    def load(%Postgrex.Range{} = range) do
-      case Conversion.range_to_interval(range) do
+    def load(nil, _loader, _params), do: {:ok, nil}
+
+    def load(%Postgrex.Range{} = range, _loader, params) do
+      case Conversion.range_to_interval(range, resolution: params.resolution) do
         {:ok, interval} -> {:ok, interval}
         {:error, _} -> :error
       end
     end
 
-    def load(_), do: :error
+    def load(_, _, _), do: :error
 
-    @impl Ecto.Type
-    def dump(nil), do: {:ok, nil}
+    @impl Ecto.ParameterizedType
+    def dump(value, dumper \\ nil, params \\ %{resolution: :second})
 
-    def dump(%Tempo.Interval{} = interval) do
+    def dump(nil, _, _), do: {:ok, nil}
+
+    def dump(%Tempo.Interval{} = interval, _, _) do
       case Conversion.interval_to_range(interval) do
         {:ok, range} -> {:ok, range}
         {:error, _} -> :error
       end
     end
 
-    def dump(_), do: :error
+    def dump(_, _, _), do: :error
 
-    @impl Ecto.Type
-    def equal?(a, b), do: a == b
+    @impl Ecto.ParameterizedType
+    def equal?(a, b, _params), do: a == b
 
-    @impl Ecto.Type
-    def embed_as(_), do: :self
+    @impl Ecto.ParameterizedType
+    def embed_as(_format, _params), do: :self
 
-    # `cast/1` is lenient about partial Tempo values — it runs them
-    # through `Tempo.to_interval/1` to get an explicit span before
-    # dumping. A single partial Tempo may materialise to an
-    # IntervalSet (for recurrences); those must be stored via
-    # `Tempo.Ecto.IntervalSet` and are rejected here.
     defp materialise(%Tempo.Interval{from: %Tempo{}, to: %Tempo{}} = interval), do: {:ok, interval}
 
     defp materialise(value) do

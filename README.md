@@ -96,6 +96,20 @@ Repo.all(
 
 `Tempo.Ecto.Tempo` materialises a partial Tempo value (`~o"2026Y"`, `~o"2026Y-06M"`) to its explicit span before writing. On load you get back a `%Tempo.Interval{}` — the "it was just a year token" fact doesn't round-trip.
 
+### The `:resolution` field option
+
+All three types accept a `:resolution` field option that truncates loaded endpoints to a named Tempo component — `:year`, `:month`, `:day`, `:hour`, `:minute`, or `:second` (the default):
+
+```elixir
+schema "reports" do
+  field :reporting_year,  Tempo.Ecto.Interval, resolution: :year
+  field :daily_window,    Tempo.Ecto.Interval, resolution: :day
+  field :meeting_window,  Tempo.Ecto.Interval   # full second resolution
+end
+```
+
+A column declared `resolution: :year` always loads as year-resolution Tempos, regardless of what the underlying `tstzrange` stored — it's a caller-side assertion about column contents, not a heuristic. See the [storage contract guide](https://github.com/kipcole9/tempo_sql/blob/main/guides/storage-contract.md#preserving-resolution--the-options) for the caveats.
+
 ## Query API
 
 `Tempo.Ecto.QueryAPI` gives you Allen-named fragments over Postgres range operators:
@@ -123,6 +137,8 @@ All three are thin delegates — you can also write the raw `add :window, :tstzr
 ## Storage contract
 
 **Not every Tempo value can be stored as a Postgres range.** Tempo expresses things that `tstzrange` / `tstzmultirange` cannot: qualifications, recurrence rules, non-Gregorian calendars, multi-valued token slots. `tempo_sql` is *explicit* about this — rather than silently lose information, it returns `:error` from `dump/1`, which surfaces as an `Ecto.ChangeError` at insert time.
+
+For the full mapping — what is retained, what is dropped, what is rejected, and how Tempo's resolution-by-omission convention interacts with Postgres ranges — see the [**Storage contract guide**](https://github.com/kipcole9/tempo_sql/blob/main/guides/storage-contract.md). The summary:
 
 ### What **is** storable
 

@@ -1,8 +1,9 @@
 if Code.ensure_loaded?(Ecto.Type) do
   defmodule Tempo.Ecto.IntervalSet do
     @moduledoc """
-    Ecto.Type for persisting a `t:Tempo.IntervalSet.t/0` as a
-    PostgreSQL `tstzmultirange` value (PostgreSQL 14+).
+    Ecto.ParameterizedType for persisting a
+    `t:Tempo.IntervalSet.t/0` as a PostgreSQL `tstzmultirange`
+    value (PostgreSQL 14+).
 
     ## Usage
 
@@ -16,84 +17,103 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     (or use `Tempo.SQL.Migration.add_interval_set/2`).
 
+    ## Options
+
+      * `:resolution` — on load, truncate every member
+        interval's endpoints to the given component. Same values
+        and semantics as `Tempo.Ecto.Interval`.
+
     ## Storage contract
 
     Every member interval must satisfy the same contract as
-    `Tempo.Ecto.Interval` — see that module for the full list.
-    In addition:
+    `Tempo.Ecto.Interval`. In addition:
 
-      * The set must be non-empty. An empty multirange round-trips
-        as `'{}'::tstzmultirange`; use a NULL column if you want to
-        represent "no set".
+      * The set must be non-empty. An empty multirange
+        round-trips as `'{}'::tstzmultirange`; use a NULL column
+        to represent "no set".
 
-      * Every member interval must be bounded on both ends
-        (Tempo.IntervalSet already enforces this via its own
-        validation — the constructor rejects `:undefined`
-        endpoints).
-
-    Metadata (`:metadata` on the set itself) is dropped on storage.
+      * Every member must be bounded on both ends (Tempo's
+        `IntervalSet.new/2` already enforces this).
 
     """
 
-    @behaviour Ecto.Type
+    use Ecto.ParameterizedType
 
     alias Tempo.SQL.Conversion
     alias Tempo.SQL.UnsupportedValueError
 
-    @impl Ecto.Type
-    def type, do: :tstzmultirange
+    @doc "See `Tempo.Ecto.Interval.cast_type/1`."
+    def cast_type(options \\ []) do
+      Ecto.ParameterizedType.init(__MODULE__, options)
+    end
 
-    @impl Ecto.Type
-    def cast(nil), do: {:ok, nil}
-    def cast(%Tempo.IntervalSet{} = set), do: {:ok, set}
+    @impl Ecto.ParameterizedType
+    def type(_params), do: :tstzmultirange
 
-    def cast(%Postgrex.Multirange{} = multirange) do
-      case multirange_to_set(multirange) do
+    @impl Ecto.ParameterizedType
+    def init(options) do
+      resolution =
+        options
+        |> Keyword.get(:resolution, :second)
+        |> Conversion.validate_resolution!()
+
+      %{resolution: resolution}
+    end
+
+    @impl Ecto.ParameterizedType
+    def cast(nil, _params), do: {:ok, nil}
+    def cast(%Tempo.IntervalSet{} = set, _params), do: {:ok, set}
+
+    def cast(%Postgrex.Multirange{} = multirange, params) do
+      case multirange_to_set(multirange, params.resolution) do
         {:ok, set} -> {:ok, set}
         {:error, _} -> :error
       end
     end
 
-    def cast(intervals) when is_list(intervals) do
+    def cast(intervals, _params) when is_list(intervals) do
       case Tempo.IntervalSet.new(intervals) do
         {:ok, set} -> {:ok, set}
         {:error, _} -> :error
       end
     end
 
-    def cast(_), do: :error
+    def cast(_, _params), do: :error
 
-    @impl Ecto.Type
-    def load(nil), do: {:ok, nil}
+    @impl Ecto.ParameterizedType
+    def load(value, loader \\ nil, params \\ %{resolution: :second})
 
-    def load(%Postgrex.Multirange{} = multirange) do
-      case multirange_to_set(multirange) do
+    def load(nil, _loader, _params), do: {:ok, nil}
+
+    def load(%Postgrex.Multirange{} = multirange, _loader, params) do
+      case multirange_to_set(multirange, params.resolution) do
         {:ok, set} -> {:ok, set}
         {:error, _} -> :error
       end
     end
 
-    def load(_), do: :error
+    def load(_, _, _), do: :error
 
-    @impl Ecto.Type
-    def dump(nil), do: {:ok, nil}
+    @impl Ecto.ParameterizedType
+    def dump(value, dumper \\ nil, params \\ %{resolution: :second})
 
-    def dump(%Tempo.IntervalSet{intervals: []}), do: :error
+    def dump(nil, _, _), do: {:ok, nil}
+    def dump(%Tempo.IntervalSet{intervals: []}, _, _), do: :error
 
-    def dump(%Tempo.IntervalSet{intervals: intervals}) do
+    def dump(%Tempo.IntervalSet{intervals: intervals}, _, _) do
       case dump_members(intervals, []) do
         {:ok, ranges} -> {:ok, %Postgrex.Multirange{ranges: ranges}}
         :error -> :error
       end
     end
 
-    def dump(_), do: :error
+    def dump(_, _, _), do: :error
 
-    @impl Ecto.Type
-    def equal?(a, b), do: a == b
+    @impl Ecto.ParameterizedType
+    def equal?(a, b, _params), do: a == b
 
-    @impl Ecto.Type
-    def embed_as(_), do: :self
+    @impl Ecto.ParameterizedType
+    def embed_as(_format, _params), do: :self
 
     defp dump_members([], acc), do: {:ok, Enum.reverse(acc)}
 
@@ -104,8 +124,8 @@ if Code.ensure_loaded?(Ecto.Type) do
       end
     end
 
-    defp multirange_to_set(%Postgrex.Multirange{ranges: ranges}) do
-      with {:ok, intervals} <- load_members(ranges, []),
+    defp multirange_to_set(%Postgrex.Multirange{ranges: ranges}, resolution) do
+      with {:ok, intervals} <- load_members(ranges, resolution, []),
            {:ok, set} <- Tempo.IntervalSet.new(intervals) do
         {:ok, set}
       else
@@ -114,11 +134,11 @@ if Code.ensure_loaded?(Ecto.Type) do
       end
     end
 
-    defp load_members([], acc), do: {:ok, Enum.reverse(acc)}
+    defp load_members([], _resolution, acc), do: {:ok, Enum.reverse(acc)}
 
-    defp load_members([range | rest], acc) do
-      case Conversion.range_to_interval(range) do
-        {:ok, interval} -> load_members(rest, [interval | acc])
+    defp load_members([range | rest], resolution, acc) do
+      case Conversion.range_to_interval(range, resolution: resolution) do
+        {:ok, interval} -> load_members(rest, resolution, [interval | acc])
         {:error, _} = err -> err
       end
     end

@@ -32,6 +32,14 @@ defmodule Tempo.SQL.Conversion do
 
   @gregorian_calendars [nil, Calendar.ISO, Calendrical.Gregorian]
 
+  @resolutions [:year, :month, :day, :hour, :minute, :second]
+  @time_components [:year, :month, :day, :hour, :minute, :second]
+
+  @doc """
+  The valid values for the `:resolution` option on the Ecto types.
+  """
+  def valid_resolutions, do: @resolutions
+
   @doc """
   Convert a `t:Tempo.Interval.t/0` into a `%Postgrex.Range{}` with
   `DateTime` bounds in UTC.
@@ -58,17 +66,95 @@ defmodule Tempo.SQL.Conversion do
   @doc """
   Convert a `%Postgrex.Range{}` back into a `t:Tempo.Interval.t/0`.
 
-  PostgreSQL canonicalises `tstzrange` values to `[lower, upper)`
-  form on output, so the inclusivity flags are effectively ignored;
-  we always build the Tempo interval with the half-open convention.
+  Unlike discrete range types (`int4range`, `daterange`), PostgreSQL
+  does **not** canonicalise `tstzrange` to `[lower, upper)` on
+  output — a range written as `[a, b]` round-trips as `[a, b]`.
+  This loader therefore normalises any non-half-open range to
+  Tempo's `[first, last)` convention by shifting the offending
+  endpoint one second:
+
+    * `[a, b]`  → `[a,         b + 1s)`
+    * `(a, b)`  → `[a + 1s,    b)`
+    * `(a, b]`  → `[a + 1s,    b + 1s)`
+
+  Tempo is second-resolution so the shift is exact — the loaded
+  interval covers the same instants as the stored range.
+
+  ### Options
+
+    * `:resolution` truncates both endpoints to the given
+      component, dropping all sub-components. Must be one of
+      `:year`, `:month`, `:day`, `:hour`, `:minute`, or `:second`.
+      Defaults to `:second` (no truncation). See the storage
+      contract guide for semantics.
+
   """
-  @spec range_to_interval(Postgrex.Range.t()) ::
+  @spec range_to_interval(Postgrex.Range.t(), keyword()) ::
           {:ok, Tempo.Interval.t()} | {:error, UnsupportedValueError.t()}
-  def range_to_interval(%Postgrex.Range{lower: lower, upper: upper}) do
-    with {:ok, from} <- datetime_to_endpoint(lower),
-         {:ok, to} <- datetime_to_endpoint(upper) do
+  def range_to_interval(range, options \\ [])
+
+  def range_to_interval(%Postgrex.Range{} = range, options) do
+    resolution = Keyword.get(options, :resolution, :second)
+
+    with {:ok, normalised} <- normalise_brackets(range),
+         {:ok, from} <- datetime_to_endpoint(normalised.lower, resolution),
+         {:ok, to} <- datetime_to_endpoint(normalised.upper, resolution) do
       Tempo.Interval.new(from: from, to: to)
     end
+  end
+
+  defp normalise_brackets(%Postgrex.Range{} = range) do
+    lower = shift_lower_to_inclusive(range.lower, range.lower_inclusive)
+    upper = shift_upper_to_exclusive(range.upper, range.upper_inclusive)
+
+    {:ok,
+     %{
+       lower: lower,
+       upper: upper,
+       lower_inclusive: true,
+       upper_inclusive: false
+     }}
+  end
+
+  defp shift_lower_to_inclusive(:unbound, _), do: :unbound
+  defp shift_lower_to_inclusive(nil, _), do: :unbound
+  defp shift_lower_to_inclusive(value, true), do: value
+  defp shift_lower_to_inclusive(%DateTime{} = dt, false), do: DateTime.add(dt, 1, :second)
+  defp shift_lower_to_inclusive(%NaiveDateTime{} = ndt, false), do: NaiveDateTime.add(ndt, 1, :second)
+
+  defp shift_upper_to_exclusive(:unbound, _), do: :unbound
+  defp shift_upper_to_exclusive(nil, _), do: :unbound
+  defp shift_upper_to_exclusive(value, false), do: value
+  defp shift_upper_to_exclusive(%DateTime{} = dt, true), do: DateTime.add(dt, 1, :second)
+  defp shift_upper_to_exclusive(%NaiveDateTime{} = ndt, true), do: NaiveDateTime.add(ndt, 1, :second)
+
+  @doc """
+  Validate a `:resolution` option value. Returns the atom
+  unchanged or raises `ArgumentError`.
+  """
+  def validate_resolution!(resolution) when resolution in @resolutions, do: resolution
+
+  def validate_resolution!(other) do
+    raise ArgumentError,
+          "expected :resolution to be one of #{inspect(@resolutions)}, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Truncate a `t:Tempo.t/0` token list to the given resolution,
+  dropping all sub-resolution components.
+  """
+  @spec truncate_tempo(Tempo.t(), atom()) :: Tempo.t()
+  def truncate_tempo(%Tempo{time: time} = tempo, resolution) do
+    %{tempo | time: truncate_time(time, resolution)}
+  end
+
+  defp truncate_time(time, resolution) do
+    keep =
+      @time_components
+      |> Enum.take_while(&(&1 != resolution))
+      |> Kernel.++([resolution])
+
+    Enum.filter(time, fn {key, _value} -> key in keep end)
   end
 
   # ------------------------------------------------------------------
@@ -94,18 +180,18 @@ defmodule Tempo.SQL.Conversion do
      )}
   end
 
-  defp datetime_to_endpoint(:unbound), do: {:ok, :undefined}
-  defp datetime_to_endpoint(nil), do: {:ok, :undefined}
+  defp datetime_to_endpoint(:unbound, _resolution), do: {:ok, :undefined}
+  defp datetime_to_endpoint(nil, _resolution), do: {:ok, :undefined}
 
-  defp datetime_to_endpoint(%DateTime{} = dt) do
-    {:ok, Tempo.from_date_time(dt)}
+  defp datetime_to_endpoint(%DateTime{} = dt, resolution) do
+    {:ok, truncate_tempo(Tempo.from_date_time(dt), resolution)}
   end
 
-  defp datetime_to_endpoint(%NaiveDateTime{} = ndt) do
-    {:ok, Tempo.from_naive_date_time(ndt)}
+  defp datetime_to_endpoint(%NaiveDateTime{} = ndt, resolution) do
+    {:ok, truncate_tempo(Tempo.from_naive_date_time(ndt), resolution)}
   end
 
-  defp datetime_to_endpoint(other) do
+  defp datetime_to_endpoint(other, _resolution) do
     {:error,
      UnsupportedValueError.exception(
        reason: :unsupported_endpoint,

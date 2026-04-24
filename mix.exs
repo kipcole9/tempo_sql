@@ -39,6 +39,7 @@ defmodule Tempo.Sql.MixProject do
       },
       files: [
         "lib",
+        "guides",
         "mix.exs",
         "README.md",
         "CHANGELOG.md",
@@ -57,7 +58,12 @@ defmodule Tempo.Sql.MixProject do
     [
       source_ref: "v#{@version}",
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md", "LICENSE.md"],
+      extras: [
+        "README.md",
+        "guides/storage-contract.md",
+        "CHANGELOG.md",
+        "LICENSE.md"
+      ],
       formatters: ["html"]
     ]
   end
