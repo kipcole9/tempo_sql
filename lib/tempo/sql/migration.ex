@@ -21,6 +21,8 @@ defmodule Tempo.SQL.Migration do
 
   """
 
+  alias Ecto.Migration
+
   @doc """
   Add a `tstzrange` column for a `Tempo.Ecto.Interval` field.
 
@@ -39,7 +41,7 @@ defmodule Tempo.SQL.Migration do
   """
   defmacro add_interval(field, options \\ []) do
     quote bind_quoted: [field: field, options: options] do
-      Ecto.Migration.add(field, :tstzrange, options)
+      Migration.add(field, :tstzrange, options)
     end
   end
 
@@ -63,7 +65,7 @@ defmodule Tempo.SQL.Migration do
   """
   defmacro add_interval_set(field, options \\ []) do
     quote bind_quoted: [field: field, options: options] do
-      Ecto.Migration.add(field, :tstzmultirange, options)
+      Migration.add(field, :tstzmultirange, options)
     end
   end
 
@@ -89,7 +91,7 @@ defmodule Tempo.SQL.Migration do
   defmacro create_interval_index(table, column, options \\ []) do
     quote bind_quoted: [table: table, column: column, options: options] do
       options = Keyword.put_new(options, :using, :gist)
-      Ecto.Migration.create(Ecto.Migration.index(table, [column], options))
+      Migration.create(Migration.index(table, [column], options))
     end
   end
 
@@ -128,7 +130,7 @@ defmodule Tempo.SQL.Migration do
 
   """
   def create_tempo_types do
-    Ecto.Migration.execute(
+    Migration.execute(
       """
       CREATE TYPE tempo_range AS (
         range      tstzrange,
@@ -139,7 +141,7 @@ defmodule Tempo.SQL.Migration do
       "DROP TYPE IF EXISTS tempo_range"
     )
 
-    Ecto.Migration.execute(
+    Migration.execute(
       """
       CREATE TYPE tempo_multirange AS (
         ranges     tstzmultirange,
@@ -159,7 +161,7 @@ defmodule Tempo.SQL.Migration do
 
   """
   def drop_tempo_types do
-    Ecto.Migration.execute(
+    Migration.execute(
       "DROP TYPE IF EXISTS tempo_multirange",
       """
       CREATE TYPE tempo_multirange AS (
@@ -170,7 +172,7 @@ defmodule Tempo.SQL.Migration do
       """
     )
 
-    Ecto.Migration.execute(
+    Migration.execute(
       "DROP TYPE IF EXISTS tempo_range",
       """
       CREATE TYPE tempo_range AS (
@@ -196,7 +198,7 @@ defmodule Tempo.SQL.Migration do
   """
   defmacro add_tempo_range(field, options \\ []) do
     quote bind_quoted: [field: field, options: options] do
-      Ecto.Migration.add(field, :tempo_range, options)
+      Migration.add(field, :tempo_range, options)
     end
   end
 
@@ -210,7 +212,7 @@ defmodule Tempo.SQL.Migration do
   """
   defmacro add_tempo_multirange(field, options \\ []) do
     quote bind_quoted: [field: field, options: options] do
-      Ecto.Migration.add(field, :tempo_multirange, options)
+      Migration.add(field, :tempo_multirange, options)
     end
   end
 end

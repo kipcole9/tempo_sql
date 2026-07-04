@@ -45,14 +45,16 @@ defmodule Tempo.Ecto.IntervalTest do
       to = Tempo.from_iso8601!("2026-06-15T17:00:00")
       {:ok, interval} = Tempo.Interval.new(from: :undefined, to: to)
 
-      assert {:ok, %Postgrex.Range{lower: :unbound}} = Interval.dump(interval, nil, @default_params)
+      assert {:ok, %Postgrex.Range{lower: :unbound}} =
+               Interval.dump(interval, nil, @default_params)
     end
 
     test "dumps an open-end interval as a Range with :unbound upper" do
       from = Tempo.from_iso8601!("2026-06-15T09:00:00")
       {:ok, interval} = Tempo.Interval.new(from: from, to: :undefined)
 
-      assert {:ok, %Postgrex.Range{upper: :unbound}} = Interval.dump(interval, nil, @default_params)
+      assert {:ok, %Postgrex.Range{upper: :unbound}} =
+               Interval.dump(interval, nil, @default_params)
     end
 
     test "returns nil passthrough" do

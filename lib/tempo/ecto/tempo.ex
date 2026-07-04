@@ -40,11 +40,12 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     use Ecto.ParameterizedType
 
+    alias Ecto.ParameterizedType
     alias Tempo.SQL.Conversion
 
     @doc "See `Tempo.Ecto.Interval.cast_type/1`."
     def cast_type(options \\ []) do
-      Ecto.ParameterizedType.init(__MODULE__, options)
+      ParameterizedType.init(__MODULE__, options)
     end
 
     @impl Ecto.ParameterizedType

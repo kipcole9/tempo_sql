@@ -19,10 +19,9 @@ defmodule Tempo.Ecto.QueryAPI.Composite do
       from m in Meeting, where: overlaps(m.window, ^iv)
 
   Right-hand operands are still plain `%Postgrex.Range{}` /
-  `%Postgrex.Multirange{}` values, produced via
-  `Tempo.Ecto.Interval.dump/3` or
-  `Tempo.Ecto.IntervalSet.dump/3`. The *left* operand
-  auto-unwraps.
+  `%Postgrex.Multirange{}` values, produced by dumping a
+  `Tempo.Ecto.Interval` or `Tempo.Ecto.IntervalSet` field.
+  The *left* operand auto-unwraps.
 
   ## Macros
 

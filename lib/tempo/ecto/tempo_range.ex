@@ -65,12 +65,13 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     use Ecto.ParameterizedType
 
+    alias Ecto.ParameterizedType
     alias Tempo.SQL.Conversion
     alias Tempo.SQL.Meta
 
     @doc "See `Tempo.Ecto.Interval.cast_type/1`."
     def cast_type(options \\ []) do
-      Ecto.ParameterizedType.init(__MODULE__, options)
+      ParameterizedType.init(__MODULE__, options)
     end
 
     @impl Ecto.ParameterizedType
@@ -127,12 +128,14 @@ if Code.ensure_loaded?(Ecto.Type) do
     def dump(nil, _, _), do: {:ok, nil}
 
     def dump(%Tempo.Interval{} = interval, _, params) do
-      with {:ok, range} <- Conversion.interval_to_queryable_range(interval) do
-        meta_json = interval |> Meta.encode_interval() |> IO.iodata_to_binary()
-        resolution_text = Atom.to_string(params.resolution)
-        {:ok, {range, resolution_text, meta_json}}
-      else
-        _ -> :error
+      case Conversion.interval_to_queryable_range(interval) do
+        {:ok, range} ->
+          meta_json = interval |> Meta.encode_interval() |> IO.iodata_to_binary()
+          resolution_text = Atom.to_string(params.resolution)
+          {:ok, {range, resolution_text, meta_json}}
+
+        _ ->
+          :error
       end
     end
 

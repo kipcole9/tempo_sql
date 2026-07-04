@@ -30,8 +30,8 @@ defmodule Tempo.Ecto.QueryAPI do
 
   The right-hand operand in each macro should be a `Postgrex.Range`
   or `Postgrex.Multirange` — i.e. either a range literal or a value
-  produced by `Tempo.Ecto.Interval.dump/1` /
-  `Tempo.Ecto.IntervalSet.dump/1`. The Ecto field type on the left
+  produced by dumping a `Tempo.Ecto.Interval` /
+  `Tempo.Ecto.IntervalSet` field. The Ecto field type on the left
   handles the conversion automatically when you pin a Tempo value
   via `^` in the query.
 

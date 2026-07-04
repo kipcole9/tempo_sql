@@ -28,6 +28,7 @@ defmodule Tempo.SQL.Conversion do
 
   """
 
+  alias Tempo.Interval
   alias Tempo.SQL.UnsupportedValueError
 
   @gregorian_calendars [nil, Calendar.ISO, Calendrical.Gregorian]
@@ -149,7 +150,7 @@ defmodule Tempo.SQL.Conversion do
     with {:ok, normalised} <- normalise_brackets(range),
          {:ok, from} <- datetime_to_endpoint(normalised.lower, resolution),
          {:ok, to} <- datetime_to_endpoint(normalised.upper, resolution) do
-      Tempo.Interval.new(from: from, to: to)
+      Interval.new(from: from, to: to)
     end
   end
 
@@ -170,13 +171,17 @@ defmodule Tempo.SQL.Conversion do
   defp shift_lower_to_inclusive(nil, _), do: :unbound
   defp shift_lower_to_inclusive(value, true), do: value
   defp shift_lower_to_inclusive(%DateTime{} = dt, false), do: DateTime.add(dt, 1, :second)
-  defp shift_lower_to_inclusive(%NaiveDateTime{} = ndt, false), do: NaiveDateTime.add(ndt, 1, :second)
+
+  defp shift_lower_to_inclusive(%NaiveDateTime{} = ndt, false),
+    do: NaiveDateTime.add(ndt, 1, :second)
 
   defp shift_upper_to_exclusive(:unbound, _), do: :unbound
   defp shift_upper_to_exclusive(nil, _), do: :unbound
   defp shift_upper_to_exclusive(value, false), do: value
   defp shift_upper_to_exclusive(%DateTime{} = dt, true), do: DateTime.add(dt, 1, :second)
-  defp shift_upper_to_exclusive(%NaiveDateTime{} = ndt, true), do: NaiveDateTime.add(ndt, 1, :second)
+
+  defp shift_upper_to_exclusive(%NaiveDateTime{} = ndt, true),
+    do: NaiveDateTime.add(ndt, 1, :second)
 
   @doc """
   Validate a `:resolution` option value. Returns the atom
@@ -225,13 +230,14 @@ defmodule Tempo.SQL.Conversion do
      UnsupportedValueError.exception(
        reason: :unsupported_endpoint,
        value: other,
-       message:
-         "interval endpoint must be a %Tempo{}, :undefined, or nil; got #{inspect(other)}"
+       message: "interval endpoint must be a %Tempo{}, :undefined, or nil; got #{inspect(other)}"
      )}
   end
 
+  # `normalise_brackets/1` maps a `nil` bound to `:unbound`, so an
+  # endpoint reaching here is only ever `:unbound`, a `DateTime`, or a
+  # `NaiveDateTime` — a `nil` clause would be unreachable.
   defp datetime_to_endpoint(:unbound, _resolution), do: {:ok, :undefined}
-  defp datetime_to_endpoint(nil, _resolution), do: {:ok, :undefined}
 
   defp datetime_to_endpoint(%DateTime{} = dt, resolution) do
     {:ok, truncate_tempo(Tempo.from_date_time(dt), resolution)}
@@ -311,7 +317,8 @@ defmodule Tempo.SQL.Conversion do
     {:error, UnsupportedValueError.exception(reason: :qualification, value: qs)}
   end
 
-  defp validate_tempo_shape(%Tempo{calendar: calendar}) when calendar not in @gregorian_calendars do
+  defp validate_tempo_shape(%Tempo{calendar: calendar})
+       when calendar not in @gregorian_calendars do
     {:error, UnsupportedValueError.exception(reason: :non_gregorian_calendar, value: calendar)}
   end
 
@@ -357,19 +364,17 @@ defmodule Tempo.SQL.Conversion do
     # Ordinal date (`year + day`) and week date (`year + week + day_of_week`)
     # require calendar conversion — reject them here; callers must
     # materialise them via `Tempo.to_date/1` first.
-    cond do
-      Keyword.has_key?(time, :week) or
-        (Keyword.has_key?(time, :day) and not Keyword.has_key?(time, :month)) ->
-        {:error,
-         UnsupportedValueError.exception(
-           reason: :partial_resolution,
-           value: time,
-           message:
-             "ordinal or week-date Tempo endpoints must be materialised to a calendar date before storage"
-         )}
-
-      true ->
-        NaiveDateTime.new(year, month, day, hour, minute, second, {0, 0})
+    if Keyword.has_key?(time, :week) or
+         (Keyword.has_key?(time, :day) and not Keyword.has_key?(time, :month)) do
+      {:error,
+       UnsupportedValueError.exception(
+         reason: :partial_resolution,
+         value: time,
+         message:
+           "ordinal or week-date Tempo endpoints must be materialised to a calendar date before storage"
+       )}
+    else
+      NaiveDateTime.new(year, month, day, hour, minute, second, {0, 0})
     end
   end
 end

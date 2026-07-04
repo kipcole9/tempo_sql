@@ -30,7 +30,7 @@ if Code.ensure_loaded?(Ecto.Type) do
     ## Storage contract
 
     This type refuses to store values it cannot round-trip
-    semantically. `dump/3` returns `:error` for:
+    semantically. The `dump` callback returns `:error` for:
 
       * Intervals with a recurrence count (`recurrence != 1`) or
         a `repeat_rule`. Materialise into a
@@ -59,6 +59,7 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     use Ecto.ParameterizedType
 
+    alias Ecto.ParameterizedType
     alias Tempo.SQL.Conversion
 
     @doc """
@@ -72,7 +73,7 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     """
     def cast_type(options \\ []) do
-      Ecto.ParameterizedType.init(__MODULE__, options)
+      ParameterizedType.init(__MODULE__, options)
     end
 
     @impl Ecto.ParameterizedType
@@ -136,7 +137,8 @@ if Code.ensure_loaded?(Ecto.Type) do
     @impl Ecto.ParameterizedType
     def embed_as(_format, _params), do: :self
 
-    defp materialise(%Tempo.Interval{from: %Tempo{}, to: %Tempo{}} = interval), do: {:ok, interval}
+    defp materialise(%Tempo.Interval{from: %Tempo{}, to: %Tempo{}} = interval),
+      do: {:ok, interval}
 
     defp materialise(value) do
       case Tempo.to_interval(value) do

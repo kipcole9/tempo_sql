@@ -2,6 +2,7 @@ defmodule Tempo.Ecto.TempoTest do
   use ExUnit.Case, async: true
 
   alias Tempo.Ecto.Tempo, as: EctoTempo
+  alias Tempo.Interval
 
   @default_params %{resolution: :second}
 
@@ -39,7 +40,7 @@ defmodule Tempo.Ecto.TempoTest do
     test "passes through a fully-anchored Interval" do
       from = Tempo.from_iso8601!("2026-06-15T09:00:00")
       to = Tempo.from_iso8601!("2026-06-15T17:00:00")
-      {:ok, interval} = Tempo.Interval.new(from: from, to: to)
+      {:ok, interval} = Interval.new(from: from, to: to)
 
       assert {:ok, %Postgrex.Range{}} = EctoTempo.dump(interval, nil, @default_params)
     end

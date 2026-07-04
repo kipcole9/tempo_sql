@@ -23,12 +23,14 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     use Ecto.ParameterizedType
 
+    alias Ecto.ParameterizedType
+    alias Tempo.IntervalSet
     alias Tempo.SQL.Conversion
     alias Tempo.SQL.Meta
 
     @doc "See `Tempo.Ecto.Interval.cast_type/1`."
     def cast_type(options \\ []) do
-      Ecto.ParameterizedType.init(__MODULE__, options)
+      ParameterizedType.init(__MODULE__, options)
     end
 
     @impl Ecto.ParameterizedType
@@ -49,7 +51,7 @@ if Code.ensure_loaded?(Ecto.Type) do
     def cast(%Tempo.IntervalSet{} = set, _params), do: {:ok, set}
 
     def cast(intervals, _params) when is_list(intervals) do
-      case Tempo.IntervalSet.new(intervals) do
+      case IntervalSet.new(intervals) do
         {:ok, set} -> {:ok, set}
         {:error, _} -> :error
       end
@@ -152,7 +154,7 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     defp load_ranges_fallback(ranges, resolution) do
       with {:ok, intervals} <- reduce_ranges(ranges, resolution, []),
-           {:ok, set} <- Tempo.IntervalSet.new(intervals) do
+           {:ok, set} <- IntervalSet.new(intervals) do
         {:ok, set}
       else
         _ -> :error

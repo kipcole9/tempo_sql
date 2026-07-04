@@ -3,11 +3,14 @@ defmodule Tempo.SQL.CompositeDBTest do
 
   import Tempo.Ecto.QueryAPI.Composite
 
+  alias Tempo.Interval
+  alias Tempo.IntervalSet
+
   describe "Tempo.Ecto.TempoRange end-to-end" do
     test "inserts and reads back a second-resolution interval" do
       from = Tempo.from_iso8601!("2026-06-15T09:00:00")
       to = Tempo.from_iso8601!("2026-06-15T10:00:00")
-      {:ok, window} = Tempo.Interval.new(from: from, to: to)
+      {:ok, window} = Interval.new(from: from, to: to)
 
       row = Repo.insert!(%FidelityMeeting{name: "Standup", window: window})
       fetched = Repo.get!(FidelityMeeting, row.id)
@@ -67,9 +70,10 @@ defmodule Tempo.SQL.CompositeDBTest do
 
       names =
         Repo.all(
-          from m in FidelityMeeting,
+          from(m in FidelityMeeting,
             where: contains(m.window, ^instant_at_930),
             select: m.name
+          )
         )
 
       assert names == ["Morning"]
@@ -80,7 +84,7 @@ defmodule Tempo.SQL.CompositeDBTest do
     test "round-trips a set of anchored intervals" do
       a = interval_between("2026-06-15T09:00:00", "2026-06-15T10:00:00")
       b = interval_between("2026-06-15T14:00:00", "2026-06-15T15:00:00")
-      {:ok, busy} = Tempo.IntervalSet.new([a, b])
+      {:ok, busy} = IntervalSet.new([a, b])
 
       row = Repo.insert!(%FidelityCalendar{owner: "alice", busy_times: busy})
       fetched = Repo.get!(FidelityCalendar, row.id)
@@ -93,7 +97,7 @@ defmodule Tempo.SQL.CompositeDBTest do
     test "round-trips a set whose members have qualifications" do
       {:ok, uncertain_a} = Tempo.from_iso8601("1984?/1985")
       {:ok, uncertain_b} = Tempo.from_iso8601("1990/1991~")
-      {:ok, set} = Tempo.IntervalSet.new([uncertain_a, uncertain_b])
+      {:ok, set} = IntervalSet.new([uncertain_a, uncertain_b])
 
       row = Repo.insert!(%FidelityCalendar{owner: "archivist", busy_times: set})
       fetched = Repo.get!(FidelityCalendar, row.id)
@@ -107,7 +111,7 @@ defmodule Tempo.SQL.CompositeDBTest do
   defp interval_between(from_str, to_str) do
     from = Tempo.from_iso8601!(from_str)
     to = Tempo.from_iso8601!(to_str)
-    {:ok, iv} = Tempo.Interval.new(from: from, to: to)
+    {:ok, iv} = Interval.new(from: from, to: to)
     iv
   end
 end

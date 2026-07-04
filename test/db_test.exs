@@ -31,7 +31,7 @@ defmodule Tempo.SQL.DBTest do
 
       %Meeting{name: "Deadline", window: window} |> Repo.insert!()
 
-      [row] = Repo.all(from m in Meeting, where: m.name == "Deadline")
+      [row] = Repo.all(from(m in Meeting, where: m.name == "Deadline"))
       assert row.window.from == :undefined
     end
 
@@ -51,9 +51,10 @@ defmodule Tempo.SQL.DBTest do
 
       names =
         Repo.all(
-          from m in Meeting,
+          from(m in Meeting,
             where: contains(m.window, ^instant_at_930),
             select: m.name
+          )
         )
 
       assert names == ["Morning"]
@@ -73,10 +74,11 @@ defmodule Tempo.SQL.DBTest do
 
       names =
         Repo.all(
-          from m in Meeting,
+          from(m in Meeting,
             where: overlaps(m.window, ^search_range),
             select: m.name,
             order_by: m.name
+          )
         )
 
       assert names == ["A", "B"]
@@ -126,9 +128,10 @@ defmodule Tempo.SQL.DBTest do
 
       owners =
         Repo.all(
-          from c in Calendar,
+          from(c in Calendar,
             where: overlaps(c.busy_times, ^search_multirange),
             select: c.owner
+          )
         )
 
       assert owners == ["alice"]

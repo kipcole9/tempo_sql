@@ -2,13 +2,14 @@ defmodule Tempo.Ecto.IntervalSetTest do
   use ExUnit.Case, async: true
 
   alias Tempo.Ecto.IntervalSet
+  alias Tempo.Interval
 
   @default_params %{resolution: :second}
 
   defp interval(from_str, to_str) do
     from = Tempo.from_iso8601!(from_str)
     to = Tempo.from_iso8601!(to_str)
-    {:ok, iv} = Tempo.Interval.new(from: from, to: to)
+    {:ok, iv} = Interval.new(from: from, to: to)
     iv
   end
 

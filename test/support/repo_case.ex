@@ -3,10 +3,12 @@ defmodule Tempo.SQL.Test.RepoCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+
   using do
     quote do
       alias Tempo.SQL.Repo
-      alias Tempo.SQL.Test.{Meeting, Calendar, FidelityMeeting, FidelityCalendar}
+      alias Tempo.SQL.Test.{Calendar, FidelityCalendar, FidelityMeeting, Meeting}
 
       import Ecto
       import Ecto.Query
@@ -15,10 +17,10 @@ defmodule Tempo.SQL.Test.RepoCase do
   end
 
   setup tags do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Tempo.SQL.Repo)
+    :ok = Sandbox.checkout(Tempo.SQL.Repo)
 
     unless tags[:async] do
-      Ecto.Adapters.SQL.Sandbox.mode(Tempo.SQL.Repo, {:shared, self()})
+      Sandbox.mode(Tempo.SQL.Repo, {:shared, self()})
     end
 
     :ok

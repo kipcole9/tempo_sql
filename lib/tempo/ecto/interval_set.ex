@@ -39,12 +39,13 @@ if Code.ensure_loaded?(Ecto.Type) do
 
     use Ecto.ParameterizedType
 
+    alias Ecto.ParameterizedType
+    alias Tempo.IntervalSet
     alias Tempo.SQL.Conversion
-    alias Tempo.SQL.UnsupportedValueError
 
     @doc "See `Tempo.Ecto.Interval.cast_type/1`."
     def cast_type(options \\ []) do
-      Ecto.ParameterizedType.init(__MODULE__, options)
+      ParameterizedType.init(__MODULE__, options)
     end
 
     @impl Ecto.ParameterizedType
@@ -72,7 +73,7 @@ if Code.ensure_loaded?(Ecto.Type) do
     end
 
     def cast(intervals, _params) when is_list(intervals) do
-      case Tempo.IntervalSet.new(intervals) do
+      case IntervalSet.new(intervals) do
         {:ok, set} -> {:ok, set}
         {:error, _} -> :error
       end
@@ -125,12 +126,8 @@ if Code.ensure_loaded?(Ecto.Type) do
     end
 
     defp multirange_to_set(%Postgrex.Multirange{ranges: ranges}, resolution) do
-      with {:ok, intervals} <- load_members(ranges, resolution, []),
-           {:ok, set} <- Tempo.IntervalSet.new(intervals) do
-        {:ok, set}
-      else
-        {:error, _} = err -> err
-        :error -> {:error, UnsupportedValueError.exception(reason: :invalid_multirange, value: ranges)}
+      with {:ok, intervals} <- load_members(ranges, resolution, []) do
+        IntervalSet.new(intervals)
       end
     end
 

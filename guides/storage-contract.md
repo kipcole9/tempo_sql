@@ -105,7 +105,7 @@ The rejected cases, from [`Tempo.SQL.Conversion`](https://github.com/kipcole9/te
 
 * **Qualifications.** `%Tempo{qualification: :uncertain}` has no Postgres-range analogue — ranges are precise, uncertainty is not. Callers who need to persist uncertainty should strip the qualification first and store it in a sibling column if the semantic is load-bearing.
 
-* **Non-Gregorian calendars.** Tempo values on `Cldr.Calendar.Hebrew`, `Cldr.Calendar.Persian`, etc. are rejected. The library does not guess at calendar conversion; callers should convert to `Calendar.ISO` via `Tempo.convert/2` before storing.
+* **Non-Gregorian calendars.** Tempo values on `Calendrical.Hebrew`, `Calendrical.Persian`, etc. are rejected. The library does not guess at calendar conversion; callers should convert to the Gregorian calendar — materialise the date via `Tempo.to_date/1`, `Date.convert/2` it to `Calendar.ISO`, and rebuild the Tempo — before storing.
 
 * **Multi-valued token slots.** A `%Tempo{time: [day_of_week: [1, 3, 5]]}` specifies Monday, Wednesday, or Friday — it is a *set of instants*, not an interval. Materialise via `Tempo.to_interval/1` into an `IntervalSet` and store that.
 

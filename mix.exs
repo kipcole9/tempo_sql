@@ -76,12 +76,13 @@ defmodule Tempo.Sql.MixProject do
 
   defp deps do
     [
-      {:ex_tempo, "~> 0.3"},
+      {:ex_tempo, "~> 0.16"},
       {:ecto, "~> 3.13"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.19"},
-      {:ex_doc, "~> 0.30", runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:ex_doc, "~> 0.38", only: [:dev, :test, :release], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ] ++ maybe_json_polyfill()
   end
 

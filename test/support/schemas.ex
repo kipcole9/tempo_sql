@@ -3,8 +3,8 @@ defmodule Tempo.SQL.Test.Meeting do
   use Ecto.Schema
 
   schema "meetings" do
-    field :name, :string
-    field :window, Tempo.Ecto.Interval
+    field(:name, :string)
+    field(:window, Tempo.Ecto.Interval)
   end
 end
 
@@ -13,8 +13,8 @@ defmodule Tempo.SQL.Test.Calendar do
   use Ecto.Schema
 
   schema "calendars" do
-    field :owner, :string
-    field :busy_times, Tempo.Ecto.IntervalSet
+    field(:owner, :string)
+    field(:busy_times, Tempo.Ecto.IntervalSet)
   end
 end
 
@@ -23,8 +23,8 @@ defmodule Tempo.SQL.Test.FidelityMeeting do
   use Ecto.Schema
 
   schema "fidelity_meetings" do
-    field :name, :string
-    field :window, Tempo.Ecto.TempoRange
+    field(:name, :string)
+    field(:window, Tempo.Ecto.TempoRange)
   end
 end
 
@@ -33,7 +33,7 @@ defmodule Tempo.SQL.Test.FidelityCalendar do
   use Ecto.Schema
 
   schema "fidelity_calendars" do
-    field :owner, :string
-    field :busy_times, Tempo.Ecto.TempoMultirange
+    field(:owner, :string)
+    field(:busy_times, Tempo.Ecto.TempoMultirange)
   end
 end

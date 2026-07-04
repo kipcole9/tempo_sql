@@ -1,12 +1,13 @@
 defmodule Tempo.SQL.MetaTest do
   use ExUnit.Case, async: true
 
+  alias Tempo.Interval
   alias Tempo.SQL.Meta
 
   describe "encode/decode round-trip — the shapes the plain-range types reject" do
     test "year-resolution implicit span survives" do
       year = Tempo.from_iso8601!("2026")
-      {:ok, interval} = Tempo.Interval.new(from: year, to: Tempo.from_iso8601!("2027"))
+      {:ok, interval} = Interval.new(from: year, to: Tempo.from_iso8601!("2027"))
 
       json = interval |> Meta.encode_interval() |> IO.iodata_to_binary()
       {:ok, loaded} = Meta.decode_interval(json)
@@ -57,7 +58,7 @@ defmodule Tempo.SQL.MetaTest do
     test "produces a string with the expected top-level keys" do
       from = Tempo.from_iso8601!("2026-06-15T09:00:00")
       to = Tempo.from_iso8601!("2026-06-15T10:00:00")
-      {:ok, interval} = Tempo.Interval.new(from: from, to: to)
+      {:ok, interval} = Interval.new(from: from, to: to)
 
       decoded = interval |> Meta.encode_interval() |> IO.iodata_to_binary() |> Meta.decode_json()
 
@@ -72,7 +73,7 @@ defmodule Tempo.SQL.MetaTest do
 
     test "unbounded endpoints encode as null" do
       to = Tempo.from_iso8601!("2026-06-15T10:00:00")
-      {:ok, interval} = Tempo.Interval.new(from: :undefined, to: to)
+      {:ok, interval} = Interval.new(from: :undefined, to: to)
 
       decoded = interval |> Meta.encode_interval() |> IO.iodata_to_binary() |> Meta.decode_json()
 
